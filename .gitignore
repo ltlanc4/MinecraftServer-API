@@ -3,3 +3,4 @@ package-lock.json
 secret.key
 server-manifest.json
 mods
+.env
