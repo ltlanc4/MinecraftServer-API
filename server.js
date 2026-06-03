@@ -56,9 +56,9 @@ function syncManifest() {
             }
 
             // Đảm bảo file cũ nếu thiếu thuộc tính server_ip/port thì sẽ tự động bổ sung cập nhật
-            if (manifest.server_ip !== envIp || manifest.server_port !== envPort) {
-                manifest.server_ip = envIp;
-                manifest.server_port = envPort;
+            if (manifest.server_ip !== SERVER_IP || manifest.server_port !== SERVER_PORT) {
+                manifest.server_ip = SERVER_IP;
+                manifest.server_port = SERVER_PORT;
                 needsUpdate = true;
             }
 
