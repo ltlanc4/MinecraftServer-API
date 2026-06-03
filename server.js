@@ -28,6 +28,13 @@ if (!fs.existsSync(MODS_DIR)) {
     fs.mkdirSync(MODS_DIR, { recursive: true });
 }
 
+// THÊM ĐOẠN NÀY VÀO NGAY DƯỚI KHU VỰC TẠO THƯ MỤC MODS
+const SKINS_DIR = path.join(__dirname, 'skins');
+if (!fs.existsSync(SKINS_DIR)) {
+    fs.mkdirSync(SKINS_DIR, { recursive: true });
+}
+app.use('/skins', express.static(SKINS_DIR)); // Mở cổng đọc file Skin
+
 // ================= HÀM TẠO TEMPLATE EMAIL CHUNG =================
 function generateEmailTemplate(title, username, mainContent, otp, note) {
     return `
@@ -68,9 +75,25 @@ function syncManifest() {
         const SERVER_PORT = process.env.SERVER_PORT || 25565;
         let manifest = { version: "26.1.2", loader: "Fabric", loader_version: "0.19.2", server_ip: SERVER_IP, server_port: SERVER_PORT, mods: actualModFiles };
         fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf8');
+        console.log(`🔄 [Auto-Sync] Đã đồng bộ Manifest: Cập nhật thành ${actualModFiles.length} Mods.`);
     } catch (error) { console.error('❌ Lỗi đồng bộ manifest:', error.message); }
 }
+
+// Chạy lần đầu khi bật server
 syncManifest();
+
+// ================= CAMERA LẮNG NGHE THƯ MỤC MODS (FS.WATCH) =================
+let watchTimeout;
+fs.watch(MODS_DIR, (eventType, filename) => {
+    // Chỉ quan tâm đến file có đuôi .jar
+    if (filename && filename.endsWith('.jar')) {
+        // Clear timeout cũ để tránh spam hàm sync khi copy nhiều file cùng lúc
+        clearTimeout(watchTimeout);
+        watchTimeout = setTimeout(() => {
+            syncManifest();
+        }, 1000); // Chờ 1 giây sau hành động cuối cùng mới cập nhật file JSON
+    }
+});
 
 // ================= EMAIL & DATABASE =================
 const transporter = nodemailer.createTransport({
@@ -121,7 +144,7 @@ app.post('/auth/forgot-password', async (req, res) => {
             from: `"OtonashiRei MC Server" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: '🔑 Mã OTP Khôi Phục',
-            html: generateEmailTemplate('Khôi phục mật khẩu', username, 'Đây là mã OTP để đặt lại mật khẩu:', otp, 'Có hiệu lực 15 phút.')
+            html: generateEmailTemplate('Khôi phục mật khẩu', username, 'Đây là mã OTP để đặt lại mật khẩu:', otp, 'Có hiệu lực 15 phút. Tuyệt đối không chia sẻ mã này cho bất kỳ ai.')
         });
         res.json({ success: true, message: 'OTP đã gửi!' });
     } catch (err) { res.status(500).json({ success: false, message: 'Lỗi gửi mail!' }); }
@@ -152,16 +175,50 @@ app.post('/auth/request-email-change', async (req, res) => {
     const { username, newEmail } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
+        if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
+
+        const existingEmail = await dbGet('SELECT * FROM users WHERE email = ?', [newEmail]);
+        if (existingEmail) return res.json({ success: false, message: 'Email này đã được sử dụng!' });
+
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         await dbRun('UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?', [otp, Date.now() + 15 * 60 * 1000, user.id]);
+        
+        // THAY ĐỔI QUAN TRỌNG: Gửi mail tới user.email (Email gốc của tài khoản)
         await transporter.sendMail({
             from: `"OtonashiRei MC Server" <${process.env.EMAIL_USER}>`,
-            to: newEmail,
+            to: user.email, 
             subject: '✉️ Xác minh thay đổi Email',
-            html: generateEmailTemplate('Xác minh thay đổi Email', username, 'Đây là mã OTP để xác nhận Email mới:', otp, 'Mã này chỉ có hiệu lực 15 phút.')
+            html: generateEmailTemplate('Xác minh thay đổi Email', username, `Bạn vừa yêu cầu thay đổi Email khôi phục sang địa chỉ mới là <strong>${newEmail}</strong>. Dưới đây là mã OTP để xác nhận:`, otp, 'Mã này chỉ có hiệu lực 15 phút. Tuyệt đối không chia sẻ mã này cho bất kỳ ai.')
         });
-        res.json({ success: true, message: 'OTP đã gửi!' });
+        res.json({ success: true, message: 'OTP đã gửi đến Email gốc!' });
     } catch (err) { res.status(500).json({ success: false, message: 'Lỗi gửi mail!' }); }
+});
+
+// GỬI OTP VỀ EMAIL ĐỂ ĐỔI MẬT KHẨU TỪ BÊN TRONG LAUNCHER
+app.post('/auth/request-password-otp', async (req, res) => {
+    const { username, oldPassword } = req.body;
+    try {
+        const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
+        if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
+
+        // KIỂM TRA MẬT KHẨU CŨ TRƯỚC KHI GỬI OTP
+        const isMatch = await bcrypt.compare(oldPassword, user.password);
+        if (!isMatch) return res.json({ success: false, message: 'Mật khẩu hiện tại không chính xác!' });
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        await dbRun('UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?', [otp, Date.now() + 15 * 60 * 1000, user.id]);
+        
+        await transporter.sendMail({
+            from: `"OtonashiRei MC Server" <${process.env.EMAIL_USER}>`,
+            to: user.email, 
+            subject: '🔑 Mã OTP Xác Nhận Đổi Mật Khẩu',
+            html: generateEmailTemplate('Xác nhận đổi mật khẩu', username, `Bạn vừa thực hiện yêu cầu đổi mật khẩu từ trong Launcher. Dưới đây là mã OTP để xác nhận:`, otp, 'Mã này chỉ có hiệu lực 15 phút. Tuyệt đối không chia sẻ mã này cho bất kỳ ai.')
+        });
+        res.json({ success: true, message: 'OTP đã gửi đến Email gốc!' });
+    } catch (err) { 
+        console.error("🔴 Lỗi gửi mail OTP đổi pass:", err);
+        res.status(500).json({ success: false, message: 'Lỗi gửi mail!' }); 
+    }
 });
 
 app.post('/auth/change-email', async (req, res) => {
@@ -174,4 +231,28 @@ app.post('/auth/change-email', async (req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server chạy tại http://localhost:${PORT}`));
+// API LƯU SKIN NHÂN VẬT
+app.post('/auth/upload-skin', async (req, res) => {
+    const { username, skinBase64 } = req.body;
+    try {
+        if (!skinBase64) return res.json({ success: false, message: 'Dữ liệu skin không hợp lệ!' });
+        
+        const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
+        if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
+
+        // Chuyển đổi dữ liệu Base64 thành File PNG và lưu với tên là <Username>.png
+        const skinBuffer = Buffer.from(skinBase64, 'base64');
+        const skinPath = path.join(SKINS_DIR, `${username}.png`);
+        fs.writeFileSync(skinPath, skinBuffer);
+
+        res.json({ success: true, message: 'Cập nhật Skin thành công!' });
+    } catch (err) {
+        console.error("Lỗi upload skin:", err);
+        res.status(500).json({ success: false, message: 'Lỗi server khi lưu skin!' });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`\n🚀 Server chạy tại http://localhost:${PORT}`);
+    console.log(`🛑 Nhấn Ctrl + C để dừng.\n`);
+});
