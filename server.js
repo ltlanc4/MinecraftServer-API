@@ -34,8 +34,9 @@ function syncManifest() {
 
         // Khung dữ liệu mặc định
         let manifest = {
-            version: "1.20.1", 
+            version: "26.1.2", 
             loader: "Fabric",
+            loader_version: "0.19.2",
             mods: []
         };
 
