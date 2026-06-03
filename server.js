@@ -35,10 +35,15 @@ function syncManifest() {
         const files = fs.readdirSync(MODS_DIR);
         const actualModFiles = files.filter(file => path.extname(file).toLowerCase() === '.jar');
 
+        // BỔ SUNG CẤU HÌNH IP VÀ PORT CỦA SERVER MINECRAFT TẠI ĐÂY 👇
+        const SERVER_IP = process.env.SERVER_IP;
+        const SERVER_PORT = process.env.SERVER_PORT;
         let manifest = {
-            version: "26.1.2", 
+            version: "26.1.2",
             loader: "Fabric",
-            loader_version: "0.19.2", 
+            loader_version: "0.19.2",
+            server_ip: SERVER_IP, // Đổi thành IP máy chủ Minecraft của bạn (LAN hoặc WAN)
+            server_port: SERVER_PORT,     // Cổng mặc định của Minecraft Server
             mods: []
         };
 
@@ -50,19 +55,26 @@ function syncManifest() {
                 manifest = JSON.parse(rawData);
             }
 
+            // Đảm bảo file cũ nếu thiếu thuộc tính server_ip/port thì sẽ tự động bổ sung cập nhật
+            if (manifest.server_ip !== envIp || manifest.server_port !== envPort) {
+                manifest.server_ip = envIp;
+                manifest.server_port = envPort;
+                needsUpdate = true;
+            }
+
             const currentMods = manifest.mods || [];
-            const isMatching = actualModFiles.length === currentMods.length && 
-                               actualModFiles.every(mod => currentMods.includes(mod));
+            const isMatching = actualModFiles.length === currentMods.length &&
+                actualModFiles.every(mod => currentMods.includes(mod));
 
             if (!isMatching) {
                 needsUpdate = true;
             }
         } else {
-            needsUpdate = true; 
+            needsUpdate = true;
         }
 
         if (needsUpdate) {
-            manifest.mods = actualModFiles; 
+            manifest.mods = actualModFiles;
             fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf8');
             console.log(`🔄 [Auto-Sync] Đã đồng bộ Manifest: Cập nhật thành ${actualModFiles.length} Mods.`);
         }
@@ -84,12 +96,11 @@ fs.watch(MODS_DIR, (eventType, filename) => {
 });
 
 // ================= THIẾT LẬP EMAIL (DÙNG .ENV) =================
-const EMAIL_USER = process.env.EMAIL_USER; 
-const EMAIL_PASS = process.env.EMAIL_PASS;      
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
 
 if (!EMAIL_USER || !EMAIL_PASS) {
     console.warn('⚠️ CẢNH BÁO: Chưa cấu hình EMAIL_USER hoặc EMAIL_PASS trong file .env!');
-    console.warn('Tính năng gửi mã OTP Quên mật khẩu sẽ không hoạt động.');
 }
 
 const transporter = nodemailer.createTransport({
@@ -126,7 +137,7 @@ const dbGet = (sql, params = []) => new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
 });
 const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) { err ? reject(err) : resolve(this) });
+    db.run(sql, params, function (err) { err ? reject(err) : resolve(this) });
 });
 
 // ================= API ENDPOINTS =================
@@ -140,11 +151,14 @@ app.get('/auth/server-info', (req, res) => {
         const rawData = fs.readFileSync(MANIFEST_PATH, 'utf8');
         const manifest = JSON.parse(rawData);
 
+        // Trả thêm thông tin IP và Port về cho Launcher C# nhận diện
         res.json({
             success: true,
             version: manifest.version,
             loader: manifest.loader,
             loader_version: manifest.loader_version,
+            server_ip: manifest.server_ip || "127.0.0.1",
+            server_port: manifest.server_port || 25565,
             totalMods: manifest.mods.length,
             mods: manifest.mods
         });
@@ -193,17 +207,52 @@ app.post('/auth/forgot-password', async (req, res) => {
         await dbRun('UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?', [otp, expiry, user.id]);
 
         const mailOptions = {
-            from: `"Minecraft Server" <${EMAIL_USER}>`,
+            // ĐÃ ĐỔI TÊN NGƯỜI GỬI Ở DÒNG NÀY 👇
+            from: `"OtonashiRei MC Server" <${EMAIL_USER}>`,
+            
             to: email,
-            subject: 'Mã khôi phục mật khẩu Launcher',
-            html: `<h2>OTP: ${otp}</h2>`
+            subject: '🔑 Mã OTP Khôi Phục Mật Khẩu',
+            html: `
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e24; padding: 40px 15px; margin: 0;">
+                <div style="max-width: 550px; margin: 0 auto; background: #2b2b36; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 20px rgba(0,0,0,0.5);">
+                    
+                    <div style="background: linear-gradient(135deg, #F36895 0%, #d14a75 100%); padding: 25px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 2px; text-transform: uppercase;">OtonashiRei MC Server</h1>
+                    </div>
+                    
+                    <div style="padding: 35px 30px;">
+                        <h2 style="color: #ffffff; margin-top: 0; font-size: 20px;">Yêu cầu khôi phục mật khẩu</h2>
+                        <p style="color: #b3b3b3; font-size: 16px; line-height: 1.6;">Xin chào <strong style="color: #F36895;">${user.username}</strong>,</p>
+                        <p style="color: #b3b3b3; font-size: 16px; line-height: 1.6;">Hệ thống vừa nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn. Dưới đây là mã xác nhận (OTP) của bạn:</p>
+                        
+                        <div style="text-align: center; margin: 35px 0;">
+                            <span style="display: inline-block; background-color: rgba(243, 104, 149, 0.1); border: 2px dashed #F36895; color: #F36895; font-size: 38px; font-weight: bold; letter-spacing: 12px; padding: 15px 35px; border-radius: 8px;">
+                                ${otp}
+                            </span>
+                        </div>
+                        
+                        <div style="background-color: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 15px; border-radius: 0 8px 8px 0; margin-bottom: 25px;">
+                            <p style="color: #ffc107; font-size: 14px; margin: 0; line-height: 1.5;">
+                                <strong>⚠️ Lưu ý bảo mật:</strong> Mã này chỉ có hiệu lực trong <strong>15 phút</strong>. Tuyệt đối không chia sẻ mã này cho bất kỳ ai, kể cả quản trị viên máy chủ.
+                            </p>
+                        </div>
+                        
+                        <hr style="border: none; border-top: 1px solid #3f3f4e; margin: 30px 0;">
+                        
+                        <p style="color: #666666; font-size: 12px; text-align: center; margin: 0; line-height: 1.5;">
+                            Đây là email tự động từ hệ thống quản lý tài khoản OtonashiRei.<br>Vui lòng không trả lời email này.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            `
         };
 
         await transporter.sendMail(mailOptions);
         res.json({ success: true, message: 'Mã OTP đã được gửi!' });
-    } catch (err) { 
+    } catch (err) {
         console.error("Lỗi gửi mail:", err);
-        res.json({ success: false, message: 'Lỗi khi gửi email! Vui lòng kiểm tra lại cấu hình.' }); 
+        res.json({ success: false, message: 'Lỗi khi gửi email! Vui lòng kiểm tra lại cấu hình.' });
     }
 });
 
