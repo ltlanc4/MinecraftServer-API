@@ -4,3 +4,4 @@ secret.key
 server-manifest.json
 mods
 .env
+database.sqlite
