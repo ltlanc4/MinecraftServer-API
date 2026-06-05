@@ -33,6 +33,7 @@ const SKINS_DIR = path.join(__dirname, 'skins');
 if (!fs.existsSync(SKINS_DIR)) {
     fs.mkdirSync(SKINS_DIR, { recursive: true });
 }
+
 app.use('/skins', express.static(SKINS_DIR)); // Mở cổng đọc file Skin
 
 // ================= HÀM TẠO TEMPLATE EMAIL CHUNG =================
@@ -95,6 +96,57 @@ fs.watch(MODS_DIR, (eventType, filename) => {
     }
 });
 
+// ================= THIẾT LẬP THƯ MỤC DOWNLOADS =================
+const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
+if (!fs.existsSync(DOWNLOADS_DIR)) {
+    fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+}
+// Mở cổng để Client có thể tải file exe về
+app.use('/downloads', express.static(DOWNLOADS_DIR));
+
+// Biến lưu thông tin phiên bản Launcher hiện tại
+let currentLauncherInfo = {
+    version: "1.0.0",
+    downloadUrl: ""
+};
+
+// Hàm tự động quét thư mục downloads để tìm file .exe và bóc tách Version
+function scanLauncherVersion() {
+    try {
+        const files = fs.readdirSync(DOWNLOADS_DIR);
+        // ĐỔI .exe THÀNH .zip Ở ĐÂY
+        const zipFile = files.find(f => f.endsWith('.zip')); 
+        
+        if (zipFile) {
+            const versionMatch = zipFile.match(/v?(\d+\.\d+\.\d+)/i);
+            const version = versionMatch ? versionMatch[1] : "1.0.0";
+            
+            const SERVER_IP = process.env.SERVER_IP || "180.93.43.73";
+            const PORT = process.env.PORT || 3000;
+            
+            currentLauncherInfo.version = version;
+            currentLauncherInfo.downloadUrl = `http://${SERVER_IP}:${PORT}/downloads/${zipFile}`;
+            
+            console.log(`🚀 [Auto-Update] Đã phát hiện bản cập nhật mới: ${version} (${zipFile})`);
+        }
+    } catch (error) {
+        console.error("❌ Lỗi quét file Launcher:", error.message);
+    }
+}
+
+// Chạy quét lần đầu khi bật Server Node.js
+scanLauncherVersion();
+
+// Camera lắng nghe thư mục downloads (Ai thả file mới vào là tự cập nhật)
+let launcherWatchTimeout;
+fs.watch(DOWNLOADS_DIR, (eventType, filename) => {
+    if (filename && filename.endsWith('.zip')) { // ĐỔI .exe THÀNH .zip
+        clearTimeout(launcherWatchTimeout);
+        launcherWatchTimeout = setTimeout(() => {
+            scanLauncherVersion();
+        }, 1000);
+    }
+});
 // ================= EMAIL & DATABASE =================
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -112,6 +164,11 @@ const dbRun = (sql, params = []) => new Promise((resolve, reject) => db.run(sql,
 app.get('/auth/server-info', (req, res) => {
     const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
     res.json({ success: true, ...manifest, totalMods: manifest.mods.length });
+});
+
+// API KIỂM TRA PHIÊN BẢN LAUNCHER CHO CLIENT
+app.get('/auth/launcher-version', (req, res) => {
+    res.json(currentLauncherInfo);
 });
 
 app.post('/auth/register', async (req, res) => {
