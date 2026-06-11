@@ -18,7 +18,7 @@ app.use(express.json());
 // MỞ CỔNG TẢI FILE STATIC
 app.use('/mods', express.static(path.join(__dirname, 'mods')));
 
-const PORT = process.env.PORT;
+const PORT = process.env.SERVER_API_PORT;
 
 // ================= THIẾT LẬP THƯ MỤC VÀ MANIFEST =================
 const MODS_DIR = path.join(__dirname, 'mods');
