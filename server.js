@@ -18,7 +18,7 @@ app.use(express.json());
 // MỞ CỔNG TẢI FILE STATIC
 app.use('/mods', express.static(path.join(__dirname, 'mods')));
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 
 // ================= THIẾT LẬP THƯ MỤC VÀ MANIFEST =================
 const MODS_DIR = path.join(__dirname, 'mods');
@@ -72,8 +72,8 @@ function syncManifest() {
     try {
         const files = fs.readdirSync(MODS_DIR);
         const actualModFiles = files.filter(file => path.extname(file).toLowerCase() === '.jar');
-        const SERVER_IP = process.env.SERVER_IP || "127.0.0.1";
-        const SERVER_PORT = process.env.SERVER_PORT || 25565;
+        const SERVER_IP = process.env.SERVER_IP;
+        const SERVER_PORT = process.env.SERVER_PORT;
         let manifest = { version: "26.1.2", loader: "Fabric", loader_version: "0.19.2", server_ip: SERVER_IP, server_port: SERVER_PORT, mods: actualModFiles };
         fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf8');
         console.log(`🔄 [Auto-Sync] Đã đồng bộ Manifest: Cập nhật thành ${actualModFiles.length} Mods.`);
