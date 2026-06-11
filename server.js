@@ -115,18 +115,18 @@ function scanLauncherVersion() {
     try {
         const files = fs.readdirSync(DOWNLOADS_DIR);
         // ĐỔI .exe THÀNH .zip Ở ĐÂY
-        const zipFile = files.find(f => f.endsWith('.zip')); 
-        
+        const zipFile = files.find(f => f.endsWith('.zip'));
+
         if (zipFile) {
             const versionMatch = zipFile.match(/v?(\d+\.\d+\.\d+)/i);
             const version = versionMatch ? versionMatch[1] : "1.0.0";
-            
-            const SERVER_IP = process.env.SERVER_IP || "180.93.43.73";
-            const PORT = process.env.PORT || 3000;
-            
+
+            const SERVER_IP = process.env.SERVER_API_IP;
+            const PORT = process.env.SERVER_API_PORT;
+
             currentLauncherInfo.version = version;
             currentLauncherInfo.downloadUrl = `http://${SERVER_IP}:${PORT}/downloads/${zipFile}`;
-            
+
             console.log(`🚀 [Auto-Update] Đã phát hiện bản cập nhật mới: ${version} (${zipFile})`);
         }
     } catch (error) {
@@ -171,7 +171,7 @@ app.get('/auth/launcher-version', (req, res) => {
     res.json(currentLauncherInfo);
 });
 
-app.post('/auth/register', async (req, res) => {
+app.post('/auth/register', async(req, res) => {
     const { username, email, password } = req.body;
     try {
         if (await dbGet('SELECT * FROM users WHERE username = ? OR email = ?', [username, email])) return res.json({ success: false, message: 'Tài khoản/Email đã tồn tại!' });
@@ -180,7 +180,7 @@ app.post('/auth/register', async (req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-app.post('/auth/login', async (req, res) => {
+app.post('/auth/login', async(req, res) => {
     const { username, password } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -190,7 +190,7 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // FORGOT PASSWORD
-app.post('/auth/forgot-password', async (req, res) => {
+app.post('/auth/forgot-password', async(req, res) => {
     const { username, email } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ? AND email = ?', [username, email]);
@@ -207,7 +207,7 @@ app.post('/auth/forgot-password', async (req, res) => {
     } catch (err) { res.status(500).json({ success: false, message: 'Lỗi gửi mail!' }); }
 });
 
-app.post('/auth/reset-password', async (req, res) => {
+app.post('/auth/reset-password', async(req, res) => {
     const { username, otp, newPassword } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -218,7 +218,7 @@ app.post('/auth/reset-password', async (req, res) => {
 });
 
 // PROFILE API
-app.post('/auth/change-password', async (req, res) => {
+app.post('/auth/change-password', async(req, res) => {
     const { username, oldPassword, newPassword } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -228,7 +228,7 @@ app.post('/auth/change-password', async (req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-app.post('/auth/request-email-change', async (req, res) => {
+app.post('/auth/request-email-change', async(req, res) => {
     const { username, newEmail } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -239,11 +239,11 @@ app.post('/auth/request-email-change', async (req, res) => {
 
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         await dbRun('UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?', [otp, Date.now() + 15 * 60 * 1000, user.id]);
-        
+
         // THAY ĐỔI QUAN TRỌNG: Gửi mail tới user.email (Email gốc của tài khoản)
         await transporter.sendMail({
             from: `"OtonashiRei MC Server" <${process.env.EMAIL_USER}>`,
-            to: user.email, 
+            to: user.email,
             subject: '✉️ Xác minh thay đổi Email',
             html: generateEmailTemplate('Xác minh thay đổi Email', username, `Bạn vừa yêu cầu thay đổi Email khôi phục sang địa chỉ mới là <strong>${newEmail}</strong>. Dưới đây là mã OTP để xác nhận:`, otp, 'Mã này chỉ có hiệu lực 15 phút. Tuyệt đối không chia sẻ mã này cho bất kỳ ai.')
         });
@@ -252,7 +252,7 @@ app.post('/auth/request-email-change', async (req, res) => {
 });
 
 // GỬI OTP VỀ EMAIL ĐỂ ĐỔI MẬT KHẨU TỪ BÊN TRONG LAUNCHER
-app.post('/auth/request-password-otp', async (req, res) => {
+app.post('/auth/request-password-otp', async(req, res) => {
     const { username, oldPassword } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -264,21 +264,21 @@ app.post('/auth/request-password-otp', async (req, res) => {
 
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         await dbRun('UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?', [otp, Date.now() + 15 * 60 * 1000, user.id]);
-        
+
         await transporter.sendMail({
             from: `"OtonashiRei MC Server" <${process.env.EMAIL_USER}>`,
-            to: user.email, 
+            to: user.email,
             subject: '🔑 Mã OTP Xác Nhận Đổi Mật Khẩu',
             html: generateEmailTemplate('Xác nhận đổi mật khẩu', username, `Bạn vừa thực hiện yêu cầu đổi mật khẩu từ trong Launcher. Dưới đây là mã OTP để xác nhận:`, otp, 'Mã này chỉ có hiệu lực 15 phút. Tuyệt đối không chia sẻ mã này cho bất kỳ ai.')
         });
         res.json({ success: true, message: 'OTP đã gửi đến Email gốc!' });
-    } catch (err) { 
+    } catch (err) {
         console.error("🔴 Lỗi gửi mail OTP đổi pass:", err);
-        res.status(500).json({ success: false, message: 'Lỗi gửi mail!' }); 
+        res.status(500).json({ success: false, message: 'Lỗi gửi mail!' });
     }
 });
 
-app.post('/auth/change-email', async (req, res) => {
+app.post('/auth/change-email', async(req, res) => {
     const { username, newEmail, otp } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ? AND reset_otp = ?', [username, otp]);
@@ -289,11 +289,11 @@ app.post('/auth/change-email', async (req, res) => {
 });
 
 // API LƯU SKIN NHÂN VẬT
-app.post('/auth/upload-skin', async (req, res) => {
+app.post('/auth/upload-skin', async(req, res) => {
     const { username, skinBase64 } = req.body;
     try {
         if (!skinBase64) return res.json({ success: false, message: 'Dữ liệu skin không hợp lệ!' });
-        
+
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
         if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
 
