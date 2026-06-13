@@ -16,7 +16,6 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 
