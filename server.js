@@ -1,4 +1,13 @@
-require('dotenv').config();
+const path = require('path');
+
+// Nạp cấu hình từ đường dẫn bảo mật của Debian 12
+require('dotenv').config({ 
+    path: '/etc/MinecraftServer-API/.env' 
+});
+
+// Test thử xem Server đã đọc được cấu hình chưa
+console.log("Server API IP:", process.env.SERVER_API_IP);
+console.log("Server Port:", process.env.SERVER_API_PORT);
 
 const express = require('express');
 const cors = require('cors');
@@ -118,7 +127,7 @@ function scanLauncherVersion() {
         const zipFile = files.find(f => f.endsWith('.zip'));
 
         if (zipFile) {
-            const versionMatch = zipFile.match(/v?(\d+\.\d+\.\d+)/i);
+            const versionMatch = zipFile.match(/v?([\d\.]+[-a-zA-Z0-9]*)/i);
             const version = versionMatch ? versionMatch[1] : "1.0.0";
 
             const SERVER_IP = process.env.SERVER_API_IP;
