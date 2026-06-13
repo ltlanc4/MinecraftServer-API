@@ -5,10 +5,6 @@ require('dotenv').config({
     path: '/etc/MinecraftServer-API/.env' 
 });
 
-// Test thử xem Server đã đọc được cấu hình chưa
-console.log("Server API IP:", process.env.SERVER_API_IP);
-console.log("Server Port:", process.env.SERVER_API_PORT);
-
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
