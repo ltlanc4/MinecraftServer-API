@@ -32,7 +32,6 @@ if (!fs.existsSync(MODS_DIR)) {
     fs.mkdirSync(MODS_DIR, { recursive: true });
 }
 
-// THÊM ĐOẠN NÀY VÀO NGAY DƯỚI KHU VỰC TẠO THƯ MỤC MODS
 const SKINS_DIR = path.join(__dirname, 'skins');
 if (!fs.existsSync(SKINS_DIR)) {
     fs.mkdirSync(SKINS_DIR, { recursive: true });
@@ -79,27 +78,24 @@ function syncManifest() {
         const SERVER_IP = process.env.SERVER_IP;
         const SERVER_PORT = process.env.SERVER_PORT;
         const MC_VERSION = process.env.MC_VERSION;
-	const MC_LOADER = process.env.MC_LOADER;
-	const MC_LOADER_VERSION = process.env.MC_LOADER_VERSION;
+        const MC_LOADER = process.env.MC_LOADER;
+        const MC_LOADER_VERSION = process.env.MC_LOADER_VERSION;
+
         let manifest = { version: MC_VERSION, loader: MC_LOADER, loader_version: MC_LOADER_VERSION, server_ip: SERVER_IP, server_port: SERVER_PORT, mods: actualModFiles };
         fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf8');
         console.log(`🔄 [Auto-Sync] Đã đồng bộ Manifest: Cập nhật thành ${actualModFiles.length} Mods.`);
     } catch (error) { console.error('❌ Lỗi đồng bộ manifest:', error.message); }
 }
 
-// Chạy lần đầu khi bật server
 syncManifest();
 
-// ================= CAMERA LẮNG NGHE THƯ MỤC MODS (FS.WATCH) =================
 let watchTimeout;
 fs.watch(MODS_DIR, (eventType, filename) => {
-    // Chỉ quan tâm đến file có đuôi .jar
     if (filename && filename.endsWith('.jar')) {
-        // Clear timeout cũ để tránh spam hàm sync khi copy nhiều file cùng lúc
         clearTimeout(watchTimeout);
         watchTimeout = setTimeout(() => {
             syncManifest();
-        }, 1000); // Chờ 1 giây sau hành động cuối cùng mới cập nhật file JSON
+        }, 1000); 
     }
 });
 
@@ -108,24 +104,25 @@ const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
 if (!fs.existsSync(DOWNLOADS_DIR)) {
     fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 }
-// Mở cổng để Client có thể tải file exe về
 app.use('/downloads', express.static(DOWNLOADS_DIR));
 
-// Biến lưu thông tin phiên bản Launcher hiện tại
 let currentLauncherInfo = {
     version: "1.0.0",
     downloadUrl: ""
 };
 
-// Hàm tự động quét thư mục downloads để tìm file .exe và bóc tách Version
+// ================= HÀM BÓC TÁCH PHIÊN BẢN CHUẨN =================
 function scanLauncherVersion() {
     try {
         const files = fs.readdirSync(DOWNLOADS_DIR);
-        // ĐỔI .exe THÀNH .zip Ở ĐÂY
         const zipFile = files.find(f => f.endsWith('.zip'));
 
         if (zipFile) {
-            const versionMatch = zipFile.match(/v?([\d\.]+[-a-zA-Z0-9]*)/i);
+            // Bước 1: Gạt bỏ hoàn toàn đuôi .zip (VD: "OtonashiRei_Launcher_v1.0.1.zip" -> "OtonashiRei_Launcher_v1.0.1")
+            const cleanBaseName = zipFile.replace(/\.zip$/i, '');
+
+            // Bước 2: Dùng biểu thức SemVer chuẩn tóm gọn cụm con số (VD: "1.0.1" hoặc "1.0.0-hotfix")
+            const versionMatch = cleanBaseName.match(/(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9\.]+)?)/);
             const version = versionMatch ? versionMatch[1] : "1.0.0";
 
             const SERVER_IP = process.env.SERVER_API_IP;
@@ -134,26 +131,25 @@ function scanLauncherVersion() {
             currentLauncherInfo.version = version;
             currentLauncherInfo.downloadUrl = `http://${SERVER_IP}:${PORT}/downloads/${zipFile}`;
 
-            console.log(`🚀 [Auto-Update] Đã phát hiện bản cập nhật mới: ${version} (${zipFile})`);
+            console.log(`🚀 [Auto-Update] Đã phát hiện bản cập nhật mới: ${version} (Tệp gốc: ${zipFile})`);
         }
     } catch (error) {
         console.error("❌ Lỗi quét file Launcher:", error.message);
     }
 }
 
-// Chạy quét lần đầu khi bật Server Node.js
 scanLauncherVersion();
 
-// Camera lắng nghe thư mục downloads (Ai thả file mới vào là tự cập nhật)
 let launcherWatchTimeout;
 fs.watch(DOWNLOADS_DIR, (eventType, filename) => {
-    if (filename && filename.endsWith('.zip')) { // ĐỔI .exe THÀNH .zip
+    if (filename && filename.endsWith('.zip')) { 
         clearTimeout(launcherWatchTimeout);
         launcherWatchTimeout = setTimeout(() => {
             scanLauncherVersion();
         }, 1000);
     }
 });
+
 // ================= EMAIL & DATABASE =================
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -173,7 +169,6 @@ app.get('/auth/server-info', (req, res) => {
     res.json({ success: true, ...manifest, totalMods: manifest.mods.length });
 });
 
-// API KIỂM TRA PHIÊN BẢN LAUNCHER CHO CLIENT
 app.get('/auth/launcher-version', (req, res) => {
     res.json(currentLauncherInfo);
 });
@@ -196,7 +191,6 @@ app.post('/auth/login', async(req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-// FORGOT PASSWORD
 app.post('/auth/forgot-password', async(req, res) => {
     const { username, email } = req.body;
     try {
@@ -224,7 +218,6 @@ app.post('/auth/reset-password', async(req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-// PROFILE API
 app.post('/auth/change-password', async(req, res) => {
     const { username, oldPassword, newPassword } = req.body;
     try {
@@ -247,7 +240,6 @@ app.post('/auth/request-email-change', async(req, res) => {
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         await dbRun('UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?', [otp, Date.now() + 15 * 60 * 1000, user.id]);
 
-        // THAY ĐỔI QUAN TRỌNG: Gửi mail tới user.email (Email gốc của tài khoản)
         await transporter.sendMail({
             from: `"OtonashiRei MC Server" <${process.env.EMAIL_USER}>`,
             to: user.email,
@@ -258,14 +250,12 @@ app.post('/auth/request-email-change', async(req, res) => {
     } catch (err) { res.status(500).json({ success: false, message: 'Lỗi gửi mail!' }); }
 });
 
-// GỬI OTP VỀ EMAIL ĐỂ ĐỔI MẬT KHẨU TỪ BÊN TRONG LAUNCHER
 app.post('/auth/request-password-otp', async(req, res) => {
     const { username, oldPassword } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
         if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
 
-        // KIỂM TRA MẬT KHẨU CŨ TRƯỚC KHI GỬI OTP
         const isMatch = await bcrypt.compare(oldPassword, user.password);
         if (!isMatch) return res.json({ success: false, message: 'Mật khẩu hiện tại không chính xác!' });
 
@@ -295,7 +285,6 @@ app.post('/auth/change-email', async(req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-// API LƯU SKIN NHÂN VẬT
 app.post('/auth/upload-skin', async(req, res) => {
     const { username, skinBase64 } = req.body;
     try {
@@ -304,7 +293,6 @@ app.post('/auth/upload-skin', async(req, res) => {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
         if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
 
-        // Chuyển đổi dữ liệu Base64 thành File PNG và lưu với tên là <Username>.png
         const skinBuffer = Buffer.from(skinBase64, 'base64');
         const skinPath = path.join(SKINS_DIR, `${username}.png`);
         fs.writeFileSync(skinPath, skinBuffer);
