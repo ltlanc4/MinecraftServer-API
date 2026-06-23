@@ -78,7 +78,10 @@ function syncManifest() {
         const actualModFiles = files.filter(file => path.extname(file).toLowerCase() === '.jar');
         const SERVER_IP = process.env.SERVER_IP;
         const SERVER_PORT = process.env.SERVER_PORT;
-        let manifest = { version: "26.1.2", loader: "Fabric", loader_version: "0.19.2", server_ip: SERVER_IP, server_port: SERVER_PORT, mods: actualModFiles };
+        const MC_VERSION = process.env.MC_VERSION;
+	const MC_LOADER = process.env.MC_LOADER;
+	const MC_LOADER_VERSION = process.env.MC_LOADER_VERSION;
+        let manifest = { version: MC_VERSION, loader: MC_LOADER, loader_version: MC_LOADER_VERSION, server_ip: SERVER_IP, server_port: SERVER_PORT, mods: actualModFiles };
         fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf8');
         console.log(`🔄 [Auto-Sync] Đã đồng bộ Manifest: Cập nhật thành ${actualModFiles.length} Mods.`);
     } catch (error) { console.error('❌ Lỗi đồng bộ manifest:', error.message); }
