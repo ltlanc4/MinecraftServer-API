@@ -75,15 +75,32 @@ function syncManifest() {
     try {
         const files = fs.readdirSync(MODS_DIR);
         const actualModFiles = files.filter(file => path.extname(file).toLowerCase() === '.jar');
+        
+        // TẠO MÃ BĂM (HASH) CHO TỪNG FILE ĐỂ PHÁT HIỆN SỰ THAY ĐỔI LÕI
+        const modsData = actualModFiles.map(fileName => {
+            const filePath = path.join(MODS_DIR, fileName);
+            const fileBuffer = fs.readFileSync(filePath);
+            const hashSum = crypto.createHash('md5').update(fileBuffer).digest('hex');
+            return { Name: fileName, Hash: hashSum };
+        });
+
         const SERVER_IP = process.env.SERVER_IP;
         const SERVER_PORT = process.env.SERVER_PORT;
         const MC_VERSION = process.env.MC_VERSION;
         const MC_LOADER = process.env.MC_LOADER;
         const MC_LOADER_VERSION = process.env.MC_LOADER_VERSION;
 
-        let manifest = { version: MC_VERSION, loader: MC_LOADER, loader_version: MC_LOADER_VERSION, server_ip: SERVER_IP, server_port: SERVER_PORT, mods: actualModFiles };
+        let manifest = { 
+            version: MC_VERSION, 
+            loader: MC_LOADER, 
+            loader_version: MC_LOADER_VERSION, 
+            server_ip: SERVER_IP, 
+            server_port: SERVER_PORT, 
+            mods: modsData // Gửi danh sách object chứa cả Tên và Mã Hash
+        };
+        
         fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf8');
-        console.log(`🔄 [Auto-Sync] Đã đồng bộ Manifest: Cập nhật thành ${actualModFiles.length} Mods.`);
+        console.log(`🔄 [Auto-Sync] Đã đồng bộ Manifest: Quét và băm MD5 cho ${actualModFiles.length} Mods.`);
     } catch (error) { console.error('❌ Lỗi đồng bộ manifest:', error.message); }
 }
 
