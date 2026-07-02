@@ -1,5 +1,4 @@
 const path = require('path');
-const { Rcon } = require('rcon-client');
 
 // Nạp cấu hình từ đường dẫn bảo mật của Debian 12
 require('dotenv').config({
@@ -15,8 +14,6 @@ const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
-// TẠO HÀNG ĐỢI: Lưu trữ những user đổi skin trong lúc MC Server đang tắt
-const pendingSkinUpdates = new Set();
 
 const app = express();
 app.use(cors());
