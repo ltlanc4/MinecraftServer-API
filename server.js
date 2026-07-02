@@ -1,5 +1,4 @@
 const path = require('path');
-const { Rcon } = require('rcon-client');
 
 // Nạp cấu hình từ đường dẫn bảo mật của Debian 12
 require('dotenv').config({
