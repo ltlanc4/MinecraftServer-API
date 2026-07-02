@@ -1,5 +1,5 @@
 const path = require('path');
-const Rcon = require('rcon-client');
+const { Rcon } = require('rcon-client');
 
 // Nạp cấu hình từ đường dẫn bảo mật của Debian 12
 require('dotenv').config({
@@ -15,9 +15,6 @@ const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
-
-// --- DÁN LÊN GẦN ĐẦU FILE (Dưới các dòng require) ---
-const pendingSkinUpdates = new Set();
 
 const app = express();
 app.use(cors());
@@ -310,79 +307,22 @@ app.post('/auth/upload-skin', async (req, res) => {
     const { username, skinBase64 } = req.body;
     try {
         if (!skinBase64) return res.json({ success: false, message: 'Dữ liệu skin không hợp lệ!' });
+
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
         if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
 
         const skinBuffer = Buffer.from(skinBase64, 'base64');
         const skinPath = path.join(SKINS_DIR, `${username}.png`);
-        
-        // 1. Lưu ảnh gốc tại VPS
         fs.writeFileSync(skinPath, skinBuffer);
-
-        // 2. Bắn lệnh nhờ Mineskin mã hóa
-        (async () => {
-            try {
-                const rcon = await Rcon.connect({
-                    host: process.env.SERVER_IP,
-                    port: process.env.SERVER_RCON_PORT,
-                    password: process.env.SERVER_RCON_PASSWORD
-                });
-
-                // Tên link phải là IP Public để Mineskin.org có thể chui vào tải ảnh
-                const skinUrl = `http://${process.env.SERVER_API_IP}:${process.env.SERVER_API_PORT}/skins/${username}.png`;
-                
-                // Gõ lệnh: skin set <tên_người_chơi> web <link_ảnh>
-                await rcon.send(`skin set ${username} web "${skinUrl}"`);
-                await rcon.end();
-                
-                console.log(`[RCON] Đã gửi yêu cầu mã hóa chữ ký cho: ${username}`);
-            } catch (error) {
-                // Đưa vào Sổ chờ nếu MC Server đang bảo trì/tắt (Xem Bước 3)
-                console.error(`⚠️ Minecraft Server đang tắt! Đưa ${username} vào hàng đợi...`);
-                pendingSkinUpdates.add(username);
-            }
-        })();
-
-        res.json({ success: true, message: 'Đã lưu Skin! Hệ thống đang mã hóa, vui lòng chờ vài giây...' });
+        
+        res.json({ success: true, message: 'Cập nhật Skin thành công!' });
     } catch (err) {
+        console.error("Lỗi upload skin:", err);
         res.status(500).json({ success: false, message: 'Lỗi server khi lưu skin!' });
     }
 });
 
-
-// ====================================================================
-// KHỞI ĐỘNG SERVER NODE.JS
-// ====================================================================
-
 app.listen(PORT, () => {
-    console.log(`\n🚀 Server chạy tại http://${process.env.SERVER_API_IP}:${PORT}`);
+    console.log(`\n🚀 Server chạy tại http://localhost:${PORT}`);
     console.log(`🛑 Nhấn Ctrl + C để dừng.\n`);
 });
-
-// --- DÁN XUỐNG CUỐI FILE (Dưới cùng) ---
-// Hệ thống Tuần tra: 15 giây chạy 1 lần để quét sổ chờ
-setInterval(async () => {
-    if (pendingSkinUpdates.size === 0) return; 
-
-    try {
-        const rcon = await Rcon.connect({
-            host: process.env.SERVER_IP,
-            port: process.env.SERVER_RCON_PORT,
-            password: process.env.SERVER_RCON_PASSWORD
-        });
-
-        console.log(`\n✅ [Retry-Queue] MC Server Online! Đang mã hóa bù cho ${pendingSkinUpdates.size} skin...`);
-
-        for (const username of pendingSkinUpdates) {
-            const skinUrl = `http://${process.env.SERVER_API_IP}:${process.env.SERVER_API_PORT}/skins/${username}.png`;
-            
-            // Ép mã hóa lại
-            await rcon.send(`skin set ${username} web "${skinUrl}"`);
-            console.log(`[+] Đã mã hóa thành công cho: ${username}`);
-            
-            pendingSkinUpdates.delete(username); 
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Nghỉ 2s tránh spam Mineskin
-        }
-        await rcon.end();
-    } catch (error) {} // Server MC vẫn tắt thì lại ngủ tiếp
-}, 15000);
