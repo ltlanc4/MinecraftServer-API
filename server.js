@@ -1,8 +1,9 @@
 const path = require('path');
+const { Rcon } = require('rcon-client');
 
 // Nạp cấu hình từ đường dẫn bảo mật của Debian 12
-require('dotenv').config({ 
-    path: '/etc/MinecraftServer-API/.env' 
+require('dotenv').config({
+    path: '/etc/MinecraftServer-API/.env'
 });
 
 const express = require('express');
@@ -75,7 +76,7 @@ function syncManifest() {
     try {
         const files = fs.readdirSync(MODS_DIR);
         const actualModFiles = files.filter(file => path.extname(file).toLowerCase() === '.jar');
-        
+
         // TẠO MÃ BĂM (HASH) CHO TỪNG FILE ĐỂ PHÁT HIỆN SỰ THAY ĐỔI LÕI
         const modsData = actualModFiles.map(fileName => {
             const filePath = path.join(MODS_DIR, fileName);
@@ -90,15 +91,15 @@ function syncManifest() {
         const MC_LOADER = process.env.MC_LOADER;
         const MC_LOADER_VERSION = process.env.MC_LOADER_VERSION;
 
-        let manifest = { 
-            version: MC_VERSION, 
-            loader: MC_LOADER, 
-            loader_version: MC_LOADER_VERSION, 
-            server_ip: SERVER_IP, 
-            server_port: SERVER_PORT, 
+        let manifest = {
+            version: MC_VERSION,
+            loader: MC_LOADER,
+            loader_version: MC_LOADER_VERSION,
+            server_ip: SERVER_IP,
+            server_port: SERVER_PORT,
             mods: modsData // Gửi danh sách object chứa cả Tên và Mã Hash
         };
-        
+
         fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf8');
         console.log(`🔄 [Auto-Sync] Đã đồng bộ Manifest: Quét và băm MD5 cho ${actualModFiles.length} Mods.`);
     } catch (error) { console.error('❌ Lỗi đồng bộ manifest:', error.message); }
@@ -112,7 +113,7 @@ fs.watch(MODS_DIR, (eventType, filename) => {
         clearTimeout(watchTimeout);
         watchTimeout = setTimeout(() => {
             syncManifest();
-        }, 1000); 
+        }, 1000);
     }
 });
 
@@ -159,7 +160,7 @@ scanLauncherVersion();
 
 let launcherWatchTimeout;
 fs.watch(DOWNLOADS_DIR, (eventType, filename) => {
-    if (filename && filename.endsWith('.zip')) { 
+    if (filename && filename.endsWith('.zip')) {
         clearTimeout(launcherWatchTimeout);
         launcherWatchTimeout = setTimeout(() => {
             scanLauncherVersion();
@@ -177,7 +178,7 @@ const db = new sqlite3.Database('./database.sqlite');
 db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE, username TEXT UNIQUE, email TEXT UNIQUE, password TEXT, reset_otp TEXT, reset_otp_expiry INTEGER)`);
 
 const dbGet = (sql, params = []) => new Promise((resolve, reject) => db.get(sql, params, (err, row) => err ? reject(err) : resolve(row)));
-const dbRun = (sql, params = []) => new Promise((resolve, reject) => db.run(sql, params, function(err) { err ? reject(err) : resolve(this) }));
+const dbRun = (sql, params = []) => new Promise((resolve, reject) => db.run(sql, params, function (err) { err ? reject(err) : resolve(this) }));
 
 // ================= API ENDPOINTS =================
 
@@ -190,7 +191,7 @@ app.get('/auth/launcher-version', (req, res) => {
     res.json(currentLauncherInfo);
 });
 
-app.post('/auth/register', async(req, res) => {
+app.post('/auth/register', async (req, res) => {
     const { username, email, password } = req.body;
     try {
         if (await dbGet('SELECT * FROM users WHERE username = ? OR email = ?', [username, email])) return res.json({ success: false, message: 'Tài khoản/Email đã tồn tại!' });
@@ -199,7 +200,7 @@ app.post('/auth/register', async(req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-app.post('/auth/login', async(req, res) => {
+app.post('/auth/login', async (req, res) => {
     const { username, password } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -208,7 +209,7 @@ app.post('/auth/login', async(req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-app.post('/auth/forgot-password', async(req, res) => {
+app.post('/auth/forgot-password', async (req, res) => {
     const { username, email } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ? AND email = ?', [username, email]);
@@ -225,7 +226,7 @@ app.post('/auth/forgot-password', async(req, res) => {
     } catch (err) { res.status(500).json({ success: false, message: 'Lỗi gửi mail!' }); }
 });
 
-app.post('/auth/reset-password', async(req, res) => {
+app.post('/auth/reset-password', async (req, res) => {
     const { username, otp, newPassword } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -235,7 +236,7 @@ app.post('/auth/reset-password', async(req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-app.post('/auth/change-password', async(req, res) => {
+app.post('/auth/change-password', async (req, res) => {
     const { username, oldPassword, newPassword } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -245,7 +246,7 @@ app.post('/auth/change-password', async(req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-app.post('/auth/request-email-change', async(req, res) => {
+app.post('/auth/request-email-change', async (req, res) => {
     const { username, newEmail } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -267,7 +268,7 @@ app.post('/auth/request-email-change', async(req, res) => {
     } catch (err) { res.status(500).json({ success: false, message: 'Lỗi gửi mail!' }); }
 });
 
-app.post('/auth/request-password-otp', async(req, res) => {
+app.post('/auth/request-password-otp', async (req, res) => {
     const { username, oldPassword } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
@@ -292,7 +293,7 @@ app.post('/auth/request-password-otp', async(req, res) => {
     }
 });
 
-app.post('/auth/change-email', async(req, res) => {
+app.post('/auth/change-email', async (req, res) => {
     const { username, newEmail, otp } = req.body;
     try {
         const user = await dbGet('SELECT * FROM users WHERE username = ? AND reset_otp = ?', [username, otp]);
@@ -302,7 +303,7 @@ app.post('/auth/change-email', async(req, res) => {
     } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
 });
 
-app.post('/auth/upload-skin', async(req, res) => {
+app.post('/auth/upload-skin', async (req, res) => {
     const { username, skinBase64 } = req.body;
     try {
         if (!skinBase64) return res.json({ success: false, message: 'Dữ liệu skin không hợp lệ!' });
@@ -313,11 +314,63 @@ app.post('/auth/upload-skin', async(req, res) => {
         const skinBuffer = Buffer.from(skinBase64, 'base64');
         const skinPath = path.join(SKINS_DIR, `${username}.png`);
         fs.writeFileSync(skinPath, skinBuffer);
+        
+        (async () => {
+            try {
+                console.log(`🔌 [RCON] Đang kết nối Minecraft Server cho ${username}...`);
+                const rcon = await Rcon.connect({
+                    host: process.env.SERVER_IP,
+                    port: process.env.SERVER_RCON_PORT,
+                    password: process.env.SERVER_RCON_PASSWORD
+                });
+
+                const skinUrl = `http://${process.env.SERVER_API_IP}:${process.env.SERVER_API_PORT}/skins/${username}.png`;
+                await rcon.send(`execute as ${username} run skin set web "${skinUrl}"`);
+
+                await rcon.end();
+                console.log(`🚀 [RCON] Đã ép Server thay áo tức thì cho: ${username}`);
+            } catch (error) {
+                console.error('❌ [RCON] Lỗi:', error.message);
+            }
+        })();
 
         res.json({ success: true, message: 'Cập nhật Skin thành công!' });
     } catch (err) {
         console.error("Lỗi upload skin:", err);
         res.status(500).json({ success: false, message: 'Lỗi server khi lưu skin!' });
+    }
+});
+
+app.get('/api/sync-all-skins', async (req, res) => {
+    
+    const skinsDir = path.join(__dirname, 'skins');
+    if (!fs.existsSync(skinsDir)) return res.json({ message: "Thư mục skins không tồn tại!" });
+
+    const files = fs.readdirSync(skinsDir).filter(f => f.endsWith('.png'));
+    if (files.length === 0) return res.json({ message: "Không có skin nào để đồng bộ." });
+
+    try {
+        console.log(`🔌 Bắt đầu đồng bộ ${files.length} skins vào Server...`);
+        const rcon = await Rcon.connect({ host: process.env.SERVER_IP, port: process.env.SERVER_RCON_PORT, password: process.env.SERVER_RCON_PASSWORD });
+        
+        let successCount = 0;
+        for (const file of files) {
+            const username = file.replace('.png', '');
+            const skinUrl = `http://${process.env.SERVER_IP}:${process.env.SERVER_RCON_PORT}/skins/${file}`;
+            
+            await rcon.send(`skin set ${username} web "${skinUrl}"`);
+            console.log(`[+] Đã nạp thành công skin cho: ${username}`);
+            
+            successCount++;
+            await new Promise(resolve => setTimeout(resolve, 2000)); 
+        }
+        
+        await rcon.end();
+        res.json({ success: true, message: `Đã nạp vĩnh viễn ${successCount} skins vào máy chủ Minecraft!` });
+        
+    } catch (error) {
+        console.error('❌ Lỗi RCON khi đồng bộ hàng loạt:', error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
