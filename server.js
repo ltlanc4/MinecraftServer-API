@@ -15,6 +15,8 @@ const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+// TẠO HÀNG ĐỢI: Lưu trữ những user đổi skin trong lúc MC Server đang tắt
+const pendingSkinUpdates = new Set();
 
 const app = express();
 app.use(cors());
@@ -39,6 +41,47 @@ if (!fs.existsSync(SKINS_DIR)) {
 }
 
 app.use('/skins', express.static(SKINS_DIR)); // Mở cổng đọc file Skin
+
+// =========================================================================
+// HÀM TỰ ĐỘNG ĐỒNG BỘ SKIN KHI KHỞI ĐỘNG NODE.JS
+// =========================================================================
+async function autoSyncAllSkinsOnStartup() {
+    const fs = require('fs');
+    const path = require('path');
+    const { Rcon } = require('rcon-client');
+
+    const skinsDir = path.join(__dirname, 'skins');
+    if (!fs.existsSync(skinsDir)) return;
+
+    const files = fs.readdirSync(skinsDir).filter(f => f.endsWith('.png'));
+    if (files.length === 0) return;
+
+    try {
+        console.log(`⏳ [Auto-Sync Skins] Chờ hệ thống ổn định... Bắt đầu nạp ${files.length} skins vào Server...`);
+        const rcon = await Rcon.connect({
+            host: process.env.SERVER_IP,
+            port: process.env.SERVER_RCON_PORT,
+            password: process.env.SERVER_RCON_PASSWORD
+        });
+
+        let successCount = 0;
+        for (const file of files) {
+            const username = file.replace('.png', '');
+            const skinUrl = `http://${process.env.SERVER_API_IP}:${process.env.SERVER_API_PORT}/skins/${file}`;
+
+            await rcon.send(`execute as ${username} run skin set web "${skinUrl}"`);
+
+            successCount++;
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Nghỉ 2s giữa các lần nạp để tránh bị block IP
+        }
+
+        await rcon.end();
+        console.log(`✅ [Auto-Sync Skins] Hoàn tất nạp vĩnh viễn ${successCount} skins vào máy chủ Minecraft!`);
+
+    } catch (error) {
+        console.error('❌ [Auto-Sync Skins] Lỗi RCON (Có thể Minecraft Server chưa bật xong):', error.message);
+    }
+}
 
 // ================= HÀM TẠO TEMPLATE EMAIL CHUNG =================
 function generateEmailTemplate(title, username, mainContent, otp, note) {
@@ -314,7 +357,7 @@ app.post('/auth/upload-skin', async (req, res) => {
         const skinBuffer = Buffer.from(skinBase64, 'base64');
         const skinPath = path.join(SKINS_DIR, `${username}.png`);
         fs.writeFileSync(skinPath, skinBuffer);
-        
+
         (async () => {
             try {
                 console.log(`🔌 [RCON] Đang kết nối Minecraft Server cho ${username}...`);
@@ -330,7 +373,9 @@ app.post('/auth/upload-skin', async (req, res) => {
                 await rcon.end();
                 console.log(`🚀 [RCON] Đã ép Server thay áo tức thì cho: ${username}`);
             } catch (error) {
-                console.error('❌ [RCON] Lỗi:', error.message);
+                // SỬA Ở ĐÂY: Nếu MC Server đang tắt, RCON sẽ quăng lỗi. Ta bắt lỗi và đưa vào sổ chờ!
+                console.error(`⚠️ [RCON] Minecraft Server đang tắt! Đưa ${username} vào hàng đợi nạp bù...`);
+                pendingSkinUpdates.add(username);
             }
         })();
 
@@ -342,7 +387,7 @@ app.post('/auth/upload-skin', async (req, res) => {
 });
 
 app.get('/api/sync-all-skins', async (req, res) => {
-    
+
     const skinsDir = path.join(__dirname, 'skins');
     if (!fs.existsSync(skinsDir)) return res.json({ message: "Thư mục skins không tồn tại!" });
 
@@ -352,29 +397,77 @@ app.get('/api/sync-all-skins', async (req, res) => {
     try {
         console.log(`🔌 Bắt đầu đồng bộ ${files.length} skins vào Server...`);
         const rcon = await Rcon.connect({ host: process.env.SERVER_IP, port: process.env.SERVER_RCON_PORT, password: process.env.SERVER_RCON_PASSWORD });
-        
+
         let successCount = 0;
         for (const file of files) {
             const username = file.replace('.png', '');
             const skinUrl = `http://${process.env.SERVER_IP}:${process.env.SERVER_RCON_PORT}/skins/${file}`;
-            
+
             await rcon.send(`skin set ${username} web "${skinUrl}"`);
             console.log(`[+] Đã nạp thành công skin cho: ${username}`);
-            
+
             successCount++;
-            await new Promise(resolve => setTimeout(resolve, 2000)); 
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
-        
+
         await rcon.end();
         res.json({ success: true, message: `Đã nạp vĩnh viễn ${successCount} skins vào máy chủ Minecraft!` });
-        
+
     } catch (error) {
         console.error('❌ Lỗi RCON khi đồng bộ hàng loạt:', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
+// ====================================================================
+// KHỞI ĐỘNG SERVER NODE.JS
+// ====================================================================
+
 app.listen(PORT, () => {
-    console.log(`\n🚀 Server chạy tại http://localhost:${PORT}`);
+    console.log(`\n🚀 Server chạy tại http://${process.env.SERVER_API_IP}:${PORT}`);
     console.log(`🛑 Nhấn Ctrl + C để dừng.\n`);
+
+    setTimeout(() => {
+        autoSyncAllSkinsOnStartup();
+    }, 15000);
+    
+    // =========================================================================
+    // HỆ THỐNG TUẦN TRA & NẠP BÙ SKIN (CHẠY NGẦM MỖI 10 GIÂY)
+    // =========================================================================
+    setInterval(async () => {
+        // Nếu sổ chờ trống rỗng -> Không có ai cần nạp bù -> Ngủ tiếp
+        if (pendingSkinUpdates.size === 0) return;
+
+        try {
+            // Thử kết nối xem Minecraft Server đã bật lên xong chưa
+            const rcon = await Rcon.connect({
+                host: process.env.SERVER_IP,
+                port: process.env.SERVER_RCON_PORT,
+                password: process.env.SERVER_RCON_PASSWORD
+            });
+
+            console.log(`\n✅ [Retry-Queue] Minecraft Server đã ONLINE! Bắt đầu nạp bù skin cho ${pendingSkinUpdates.size} người...`);
+
+            // Lôi từng người trong Sổ chờ ra để nạp
+            for (const username of pendingSkinUpdates) {
+                const skinUrl = `http://${process.env.SERVER_API_IP}:${process.env.SERVER_API_PORT}/skins/${username}.png`;
+
+                await rcon.send(`execute as ${username} run skin set web "${skinUrl}"`);
+                console.log(`[+] Đã nạp bù thành công cho: ${username}`);
+
+                // Nạp thành công thì xóa tên người đó khỏi sổ
+                pendingSkinUpdates.delete(username);
+
+                // Tránh spam server quá nhanh, nghỉ 0.5 giây giữa mỗi lệnh
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            await rcon.end();
+            console.log(`🎉 [Retry-Queue] Đã giải quyết xong toàn bộ sổ chờ!\n`);
+
+        } catch (error) {
+            // Nếu chui vào đây nghĩa là Minecraft Server vẫn đang tắt. 
+            // Lệnh sẽ im lặng bỏ qua và 10 giây sau tự động thử kết nối lại.
+        }
+    }, 10000); // 10000 mili-giây = 10 giây lặp lại 1 lần
 });
