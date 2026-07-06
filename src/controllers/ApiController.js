@@ -21,7 +21,6 @@ class ApiController {
      * @param {WebSocketManager} wsManager 
      * @param {string} skinsDir - Đường dẫn thư mục lưu Skin
      */
-
     constructor(dbManager, emailService, assetManager, wsManager, skinsDir) {
         this.db = dbManager;
         this.emailService = emailService;
@@ -56,9 +55,9 @@ class ApiController {
     getServerInfo(req, res) {
         try {
             const manifest = JSON.parse(fs.readFileSync(this.assetManager.manifestPath, 'utf8'));
-            res.json({ success: true, ...manifest, totalMods: manifest.mods.length });
+            res.json({ status: 200, success: true, ...manifest, totalMods: manifest.mods.length });
         } catch (err) {
-            res.status(500).json({ success: false, message: 'Lỗi đọc cấu hình máy chủ!' });
+            res.status(500).json({ status: 500, success: false, message: 'ERR_SERVER_CONFIG' });
         }
     }
 
@@ -80,12 +79,12 @@ class ApiController {
         const { username, email, password } = req.body;
         try {
             if (await this.db.get('SELECT * FROM users WHERE username = ? OR email = ?', [username, email])) {
-                return res.json({ success: false, message: 'Tài khoản hoặc Email đã tồn tại!' });
+                return res.json({ status: 409, success: false, message: 'ERR_USER_EXISTS' });
             }
             const hashedPassword = await bcrypt.hash(password, 10);
             await this.db.run('INSERT INTO users (uuid, username, email, password) VALUES (?, ?, ?, ?)', [uuidv4(), username, email, hashedPassword]);
-            res.json({ success: true, message: 'Đăng ký thành công!' });
-        } catch (err) { res.json({ success: false, message: 'Lỗi server hệ thống!' }); }
+            res.json({ status: 200, success: true, message: 'SUCCESS_REGISTER' });
+        } catch (err) { res.json({ status: 500, success: false, message: 'ERR_SERVER' }); }
     }
 
     /**
@@ -98,10 +97,10 @@ class ApiController {
         try {
             const user = await this.db.get('SELECT * FROM users WHERE username = ?', [username]);
             if (!user || !(await bcrypt.compare(password, user.password))) {
-                return res.json({ success: false, message: 'Sai tài khoản hoặc mật khẩu!' });
+                return res.json({ status: 401, success: false, message: 'ERR_INVALID_CREDENTIALS' });
             }
-            res.json({ success: true, token: 'fake-token', username: user.username, uuid: user.uuid });
-        } catch (err) { res.json({ success: false, message: 'Lỗi máy chủ đăng nhập!' }); }
+            res.json({ status: 200, success: true, token: 'fake-token', username: user.username, uuid: user.uuid });
+        } catch (err) { res.json({ status: 500, success: false, message: 'ERR_SERVER' }); }
     }
 
     /**
@@ -113,7 +112,7 @@ class ApiController {
         const { username, email } = req.body;
         try {
             const user = await this.db.get('SELECT * FROM users WHERE username = ? AND email = ?', [username, email]);
-            if (!user) return res.json({ success: false, message: 'Thông tin tài khoản không chính xác!' });
+            if (!user) return res.json({ status: 401, success: false, message: 'ERR_INVALID_ACCOUNT' });
             
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
             await this.db.run('UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?', [otp, Date.now() + 15 * 60 * 1000, user.id]);
@@ -121,8 +120,8 @@ class ApiController {
             const html = this.emailService.generateTemplate('Khôi phục mật khẩu', username, 'Đây là mã OTP đặt lại mật khẩu của bạn:', otp, 'Mã này có hiệu lực trong 15 phút. Tuyệt đối không giao mã cho người lạ.');
             await this.emailService.sendMail(email, '🔑 Mã OTP Khôi Phục Mật Khẩu', html);
             
-            res.json({ success: true, message: 'Mã OTP đã gửi thành công!' });
-        } catch (err) { res.status(500).json({ success: false, message: 'Lỗi dịch vụ gửi mail!' }); }
+            res.json({ status: 200, success: true, message: 'SUCCESS_OTP_SENT' });
+        } catch (err) { res.status(500).json({ status: 500, success: false, message: 'ERR_MAIL_SERVICE' }); }
     }
 
     /**
@@ -134,12 +133,12 @@ class ApiController {
         const { username, otp, newPassword } = req.body;
         try {
             const user = await this.db.get('SELECT * FROM users WHERE username = ?', [username]);
-            if (!user || user.reset_otp !== otp) return res.json({ success: false, message: 'Mã OTP không hợp lệ!' });
+            if (!user || user.reset_otp !== otp) return res.json({ status: 401, success: false, message: 'ERR_INVALID_OTP' });
             
             const hashedNewPassword = await bcrypt.hash(newPassword, 10);
             await this.db.run('UPDATE users SET password = ?, reset_otp = NULL WHERE id = ?', [hashedNewPassword, user.id]);
-            res.json({ success: true, message: 'Đặt lại mật khẩu thành công!' });
-        } catch (err) { res.json({ success: false, message: 'Lỗi hệ thống reset!' }); }
+            res.json({ status: 200, success: true, message: 'SUCCESS_PASSWORD_RESET' });
+        } catch (err) { res.json({ status: 500, success: false, message: 'ERR_SERVER' }); }
     }
 
     /**
@@ -152,12 +151,12 @@ class ApiController {
         try {
             const user = await this.db.get('SELECT * FROM users WHERE username = ?', [username]);
             if (!user || !(await bcrypt.compare(oldPassword, user.password))) {
-                return res.json({ success: false, message: 'Mật khẩu cũ không đúng!' });
+                return res.json({ status: 401, success: false, message: 'ERR_WRONG_OLD_PASSWORD' });
             }
             const hashedNewPassword = await bcrypt.hash(newPassword, 10);
             await this.db.run('UPDATE users SET password = ? WHERE id = ?', [hashedNewPassword, user.id]);
-            res.json({ success: true, message: 'Đổi mật khẩu thành công!' });
-        } catch (err) { res.json({ success: false, message: 'Lỗi server!' }); }
+            res.json({ status: 200, success: true, message: 'SUCCESS_PASSWORD_CHANGED' });
+        } catch (err) { res.json({ status: 500, success: false, message: 'ERR_SERVER' }); }
     }
 
     /**
@@ -169,10 +168,11 @@ class ApiController {
         const { username, newEmail } = req.body;
         try {
             const user = await this.db.get('SELECT * FROM users WHERE username = ?', [username]);
-            if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
+            if (!user) return res.json({ status: 404, success: false, message: 'ERR_USER_NOT_FOUND' });
 
             if (await this.db.get('SELECT * FROM users WHERE email = ?', [newEmail])) {
-                return res.json({ success: false, message: 'Email này đã được tài khoản khác sử dụng!' });
+                // 🟢 ĐÃ CHUYỂN ĐỔI THÀNH MÃ CODE BÁO LỖI
+                return res.json({ status: 409, success: false, message: 'ERR_EMAIL_IN_USE' });
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -181,8 +181,8 @@ class ApiController {
             const html = this.emailService.generateTemplate('Xác minh thay đổi Email', username, `Bạn yêu cầu đổi Email khôi phục sang địa chỉ mới: <strong>${newEmail}</strong>. Nhập mã OTP dưới đây để hoàn tất:`, otp, 'Mã này có hiệu lực trong 15 phút. Tuyệt đối giữ bảo mật.');
             await this.emailService.sendMail(user.email, '✉️ Xác minh thay đổi Email khôi phục', html);
             
-            res.json({ success: true, message: 'OTP xác nhận đã gửi đến Email gốc!' });
-        } catch (err) { res.status(500).json({ success: false, message: 'Lỗi gửi mail xác minh!' }); }
+            res.json({ status: 200, success: true, message: 'SUCCESS_OTP_SENT' });
+        } catch (err) { res.status(500).json({ status: 500, success: false, message: 'ERR_MAIL_SERVICE' }); }
     }
 
     /**
@@ -194,10 +194,10 @@ class ApiController {
         const { username, oldPassword } = req.body;
         try {
             const user = await this.db.get('SELECT * FROM users WHERE username = ?', [username]);
-            if (!user) return res.json({ success: false, message: 'Tài khoản không tồn tại!' });
+            if (!user) return res.json({ status: 404, success: false, message: 'ERR_USER_NOT_FOUND' });
 
             if (!(await bcrypt.compare(oldPassword, user.password))) {
-                return res.json({ success: false, message: 'Mật khẩu hiện tại không chính xác!' });
+                return res.json({ status: 401, success: false, message: 'ERR_WRONG_OLD_PASSWORD' });
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -206,9 +206,9 @@ class ApiController {
             const html = this.emailService.generateTemplate('Xác nhận đổi mật khẩu', username, `Yêu cầu đổi mật khẩu bảo mật của bạn đang chờ phê duyệt. Dưới đây là mã OTP:`, otp, 'Mã chỉ có hiệu lực trong 15 phút.');
             await this.emailService.sendMail(user.email, '🔑 Mã OTP Xác Nhận Đổi Mật Khẩu', html);
             
-            res.json({ success: true, message: 'OTP đã gửi đến Email gốc của bạn!' });
+            res.json({ status: 200, success: true, message: 'SUCCESS_OTP_SENT' });
         } catch (err) {
-            res.status(500).json({ success: false, message: 'Lỗi gửi mail hệ thống!' });
+            res.status(500).json({ status: 500, success: false, message: 'ERR_MAIL_SERVICE' });
         }
     }
 
@@ -221,11 +221,11 @@ class ApiController {
         const { username, newEmail, otp } = req.body;
         try {
             const user = await this.db.get('SELECT * FROM users WHERE username = ? AND reset_otp = ?', [username, otp]);
-            if (!user) return res.json({ success: false, message: 'Mã OTP không hợp lệ hoặc đã hết hạn!' });
+            if (!user) return res.json({ status: 400, success: false, message: 'ERR_INVALID_OTP' });
             
             await this.db.run('UPDATE users SET email = ?, reset_otp = NULL WHERE id = ?', [newEmail, user.id]);
-            res.json({ success: true, message: 'Cập nhật Email khôi phục thành công!' });
-        } catch (err) { res.json({ success: false, message: 'Lỗi hệ thống đồng bộ!' }); }
+            res.json({ status: 200, success: true, message: 'SUCCESS_EMAIL_CHANGED' });
+        } catch (err) { res.json({ status: 500, success: false, message: 'ERR_SERVER' }); }
     }
 
     /**
@@ -236,10 +236,10 @@ class ApiController {
     async uploadSkin(req, res) {
         const { username, skinBase64 } = req.body;
         try {
-            if (!skinBase64) return res.json({ success: false, message: 'Dữ liệu skin không hợp lệ!' });
+            if (!skinBase64) return res.json({ status: 400, success: false, message: 'ERR_INVALID_SKIN_DATA' });
 
             const user = await this.db.get('SELECT * FROM users WHERE username = ?', [username]);
-            if (!user) return res.json({ success: false, message: 'Không tìm thấy tài khoản!' });
+            if (!user) return res.json({ status: 404, success: false, message: 'ERR_USER_NOT_FOUND' });
 
             const skinBuffer = Buffer.from(skinBase64, 'base64');
             const skinPath = path.join(this.skinsDir, `${username}.png`);
@@ -248,9 +248,9 @@ class ApiController {
             // KÍCH HOẠT WEBSOCKET PHÁT SÓNG ĐỒNG BỘ ẢO LẬP TỨC
             this.wsManager.broadcastSkinUpdate(username);
 
-            res.json({ success: true, message: 'Cập nhật Skin thành công! Các máy khách đang tự động vẽ lại...' });
+            res.json({ status: 200, success: true, message: 'SUCCESS_SKIN_UPDATED' });
         } catch (err) {
-            res.status(500).json({ success: false, message: 'Lỗi lưu trữ skin tại máy chủ!' });
+            res.status(500).json({ status: 500, success: false, message: 'ERR_SERVER' });
         }
     }
 }
