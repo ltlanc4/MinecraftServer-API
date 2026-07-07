@@ -1,4 +1,4 @@
-const { Server } = require('ws');
+const WebSocket = require('ws');
 
 class WebSocketManager {
     /**
@@ -6,7 +6,7 @@ class WebSocketManager {
      * @param {Server} httpServer - Thể hiện của HTTP Server để đính kèm WebSocket
      */
     constructor(httpServer) {
-        this.wss = new Server({ server: httpServer });
+        this.wss = new WebSocket.Server({ server: httpServer });
         this.initEvents();
     }
 
