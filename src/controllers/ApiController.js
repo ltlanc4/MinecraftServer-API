@@ -251,6 +251,7 @@ class ApiController {
             res.json({ status: 200, success: true, message: 'SUCCESS_SKIN_UPDATED' });
         } catch (err) {
             res.status(500).json({ status: 500, success: false, message: 'ERR_SERVER' });
+            console.log(err);
         }
     }
 }
