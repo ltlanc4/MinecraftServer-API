@@ -60,7 +60,15 @@ class AppServer {
         // Khai báo public files
         this.app.use('/mods', express.static(this.assetManager.modsDir));
         this.app.use('/downloads', express.static(this.assetManager.downloadsDir));
-        this.app.use('/skins', express.static(this.skinsDir));
+        
+        // 🟢 ĐÃ FIX: Chèn thêm cấu hình chặn Cache mạng cho thư mục skins
+        this.app.use('/skins', express.static(this.skinsDir, {
+            setHeaders: (res, path, stat) => {
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+                res.setHeader('Pragma', 'no-cache');
+                res.setHeader('Expires', '0');
+            }
+        }));
     }
 
     /**
