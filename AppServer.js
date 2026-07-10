@@ -1,7 +1,12 @@
-// Bắt buộc nạp cấu hình môi trường ngay dòng đầu tiên
+// Bắt buộc nạp cấu hình môi trường ngay dòng đầu tiên (For ServerSide)
 require('dotenv').config({
     path: '/etc/MinecraftServer-API/.env'
 });
+
+// Bắt buộc nạp cấu hình môi trường ngay dòng đầu tiên (For testing)
+// require('dotenv').config({
+//     path: './.env'
+// });
 
 const express = require('express');
 const http = require('http');

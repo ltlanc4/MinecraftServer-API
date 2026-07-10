@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const { Rcon } = require('rcon-client');
 
 // Nạp Type Definitions từ các Class khác để JSDoc nhận diện
 /** @typedef {import('../core/DatabaseManager')} DatabaseManager */
@@ -229,7 +230,7 @@ class ApiController {
     }
 
     /**
-     * Lưu trữ ảnh Skin người dùng và phát sóng WebSocket
+     * Lưu trữ ảnh Skin người dùng và phát sóng WebSocket + Đồng bộ RCON sang Game Server
      * @param {Request} req 
      * @param {Response} res 
      */
@@ -245,10 +246,36 @@ class ApiController {
             const skinPath = path.join(this.skinsDir, `${username}.png`);
             fs.writeFileSync(skinPath, skinBuffer);
             
-            // KÍCH HOẠT WEBSOCKET PHÁT SÓNG ĐỒNG BỘ ẢO LẬP TỨC
+            // KÍCH HOẠT WEBSOCKET PHÁT SÓNG ĐỒNG BỘ ẢO LẬP TỨC (Giữ nguyên logic cũ của bạn)
             this.wsManager.broadcastSkinUpdate(username);
 
-            res.json({ status: 200, success: true, message: 'SUCCESS_SKIN_UPDATED' });
+            // ================= 🔥 BỔ SUNG: ĐỒNG BỘ RCON SANG MINECRAFT DEDICATED SERVER =================
+            // Tự động tạo Fully Qualified URL dựa trên host đang chạy API (Hỗ trợ cả HTTP và HTTPS)
+            const protocol = req.secure ? 'https' : 'http';
+            const skinUrl = `${protocol}://${process.env.SERVER_API_IP}:${process.env.SERVER_API_PORT}/skins/${username}.png`;
+
+            // Chỉ thực hiện bắn RCON nếu bạn đã điền cấu hình trong file .env
+            if (process.env.SERVER_IP && process.env.SERVER_RCON_PASSWORD) {
+                // Chạy bất đồng bộ độc lập (Fire-and-Forget) để không làm chậm tốc độ phản hồi HTTP của User
+                Rcon.connect({
+                    host: process.env.SERVER_IP,
+                    port: parseInt(process.env.SERVER_RCON_PORT || '25575'),
+                    password: process.env.SERVER_RCON_PASSWORD,
+                    timeout: 3000 // Tự động ngắt kết nối sau 3 giây nếu Server Game bị sập, tránh treo luồng API
+                }).then(async (rcon) => {
+                    // Sử dụng chính xác user.uuid lấy từ database của bạn để đồng bộ với Mod Fabric
+                    const command = `skinloader set ${username} ${skinUrl}`;
+                    await rcon.send(command);
+                    await rcon.end();
+                    console.log(`📢 [RCON Sync] Đã ép Game Server đồng bộ skin thành công cho UUID: ${user.uuid}`);
+                }).catch((rconErr) => {
+                    // Log lỗi ra console hệ thống để bạn debug nhưng không bắn lỗi về Client làm gián đoạn trải nghiệm người dùng
+                    console.error(`❌ [RCON Error] Lỗi kết nối đến Minecraft Game Server: ${rconErr.message}`);
+                });
+            }
+            // ===========================================================================================
+
+            res.json({ status: 200, success: true, message: 'SUCCESS_SKIN_UPDATED', url: skinUrl });
         } catch (err) {
             res.status(500).json({ status: 500, success: false, message: 'ERR_SERVER' });
         }
